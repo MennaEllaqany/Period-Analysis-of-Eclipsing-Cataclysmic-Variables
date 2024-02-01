@@ -127,3 +127,26 @@ print(oc_data_table)
 # Save the DataFrame to a CSV file
 #path = '/Users/valegarcia/Downloads/oc_data_table.csv'
 #oc_data_table.to_csv(path, index=False)
+
+def graph():
+    plt.scatter(calculated_times, oc_values, marker='.', color='b')
+    plt.xlabel('Calculated Values')
+    plt.ylabel('O-C Value')
+    plt.ylim([-0.005, 0.005])
+    plt.title('O-C Diagram')
+    plt.grid(True)
+    plt.show()
+    
+graph()
+
+# Fit a linear model to the O-C values vs. epochs
+def linear_model(x, a):
+    return a * x
+
+params, covariance = curve_fit(linear_model, epochs, oc_values)
+
+# The slope of the linear fit represents P-dot (dP/dt)
+p_dot = params[0]
+
+# Print the calculated P-dot value
+print(f"Calculated P-dot: {p_dot}")
