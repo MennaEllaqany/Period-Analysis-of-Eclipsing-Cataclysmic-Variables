@@ -1,0 +1,129 @@
+##Make sure you change the directory of the downloaded data files or comment it out for this to run properly
+##For every Object we will have to change the period, and the initial guesses manually
+
+%matplotlib notebook
+import numpy as np
+import matplotlib.pyplot as plt
+from astropy.time import Time
+import lightkurve as lk
+from scipy.optimize import curve_fit
+import pandas as pd
+
+TIC = 'TIC 3034524'
+
+data_all = lk.search_lightcurve(TIC, author='SPOC')
+
+data = data_all[0]
+
+lc = data.download_all().stitch()
+
+# Define the Gaussian function
+def gaussian_function(x, A, mu, sigma):
+    return -(A * np.exp(-((x - mu)**2) / (2 * sigma**2))-1)
+
+def process_chunk(start_index, end_index, mu_fit):
+    Times = lc.time[start_index:end_index]
+    t = Time(Times)
+    x = np.array(t.btjd)
+    y = np.array(lc.flux[start_index:end_index])
+    
+    # Remove invalid values (infs and NaNs) from y and x arrays
+    mask_valid = ~np.isnan(y) & ~np.isinf(y)
+    x = x[mask_valid]
+    y = y[mask_valid]
+    
+    while len(x) > 3:
+        # Fitting the curve to the data
+        initial_guess = [10, mu_fit, 0.17]
+        params, covariance = curve_fit(gaussian_function, x, y, p0=initial_guess)
+
+        # Get fitted values for A, μ and σ
+        A_fit, mu_fit, sigma_fit = params
+
+        # Get the diagonals of the covariance matrix as the variances of A, μ and σ
+        var_A_fit, var_mu_fit, var_sigma_fit = np.diag(covariance)
+
+        # Create points for the fitted curve
+        x_fit = np.linspace(min(x), max(x), 1000)
+        y_fit = gaussian_function(x_fit, A_fit, mu_fit, sigma_fit)
+
+        # Calculate the errors as the square root of the variances
+        error_A_fit = np.sqrt(var_A_fit)
+        error_mu_fit = np.sqrt(var_mu_fit)
+        error_sigma_fit = np.sqrt(var_sigma_fit) 
+        
+        mu_fit_values.append(mu_fit)
+        error_mu_fit_values.append(error_mu_fit)
+
+        return mu_fit
+    
+    if len(x) <= 3:
+        mu_guess=1829
+        initial_guess = [A_guess, mu_guess, sigma_guess]
+        mu_fit = initial_guess[1]
+
+        return mu_fit
+
+# Define initial guesses for A, mu, and sigma
+A_guess = 10
+mu_guess = 1816.3
+sigma_guess = 0.17
+
+# Create the initial_guess list
+initial_guess = [A_guess, mu_guess, sigma_guess]
+
+# Get the period in julian days
+period_julian_days = 0.357452436602186
+
+# Initialize mu_fit with the initial guess value for mu
+mu_fit = initial_guess[1]
+
+# Initialize lists for mu_fit and error_mu_fit values
+mu_fit_values = []
+error_mu_fit_values = []
+
+# Iterate through the light curve and process chunks of data with the given period
+start_index = 0
+i=1
+while start_index < len(lc):
+    end_time = lc.time[start_index] + period_julian_days
+    end_index = np.searchsorted(lc.time, end_time, side='right')
+    
+    # Call process_chunk with the updated mu_fit value
+    mu_fit = process_chunk(start_index, end_index, mu_fit)
+    mu_fit = mu_fit + period_julian_days
+
+    # Update the start_index for the next iteration
+    start_index = end_index
+    i=i+1 
+
+#Print O values data table 
+
+o_values = mu_fit_values
+o_values_errors = error_mu_fit_values
+df = pd.DataFrame({'O Values': o_values, 'O Values Errors': o_values_errors})
+print(df)
+### I have to iterate through all of this 
+# Given observed times (O) of minima for an eclipsing binary
+observed_times = np.array(o_values)
+
+T0 = mu_fit_values [0]  # The first mu_fit is T0
+P = period_julian_days  # Period of the eclipsing binar
+
+# Calculate the epoch (E) for each mu_fit (O) value
+epochs = np.round((mu_fit_values - T0) / P)
+
+# Calculate the calculated times (C) using the linear ephemeris model
+calculated_times = T0 + P * epochs
+
+# Calculate the O-C values
+oc_values = mu_fit_values - calculated_times
+
+# Create a DataFrame to store the results
+oc_data_table = pd.DataFrame({'mu_fit': mu_fit_values,'Epochs': epochs,'Calculated Times': calculated_times,'O-C Values': oc_values})
+
+# Display the O-C DataFrame
+print(oc_data_table)
+# Save the DataFrame to a CSV file
+#path = '/Users/valegarcia/Downloads/oc_data_table.csv'
+#oc_data_table.to_csv(path, index=False)
